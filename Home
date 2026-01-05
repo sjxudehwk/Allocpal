@@ -1,0 +1,176 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Users, CheckCircle, BarChart3, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
+import { createPageUrl } from '@/utils';
+
+export default function Home() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const authenticated = await base44.auth.isAuthenticated();
+      if (authenticated) {
+        window.location.href = createPageUrl('Dashboard');
+        return;
+      }
+      setIsAuthenticated(false);
+    } catch (error) {
+      setIsAuthenticated(false);
+    }
+    setIsLoading(false);
+  };
+
+  const handleLogin = () => {
+    base44.auth.redirectToLogin(createPageUrl('Dashboard'));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <Loader2 className="w-8 h-8 animate-spin text-slate-900" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+      {/* Header */}
+      <header className="px-6 py-4 flex justify-between items-center max-w-7xl mx-auto">
+        <div className="flex items-center gap-2">
+          <img 
+            src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6951500dd50ea78b48c99ef1/cdfa39cae_63bdf392-8a47-4fd5-8336-0b9d3d18433b.jpg"
+            alt="AllocPal Logo"
+            className="w-10 h-10 rounded-xl object-cover"
+          />
+          <span className="text-2xl font-bold text-slate-900">
+            AllocPal
+          </span>
+        </div>
+        <Button 
+          onClick={handleLogin}
+          className="bg-slate-900 hover:bg-slate-800"
+        >
+          Get Started
+        </Button>
+      </header>
+
+      {/* Hero Section */}
+      <main className="max-w-7xl mx-auto px-6 pt-16 pb-24">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <div className="inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full text-sm font-medium mb-6">
+            <Sparkles className="w-4 h-4" />
+            AI-Powered Task Distribution
+          </div>
+          <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-tight">
+            Fair Group Projects,{' '}
+            <span className="font-bold text-slate-900">
+              Finally.
+            </span>
+          </h1>
+          <p className="text-xl text-slate-600 mb-8">
+            No more one person doing all the work. AllocPal uses AI to distribute tasks fairly, 
+            track contributions, and ensure everyone pulls their weight.
+          </p>
+          <Button 
+            onClick={handleLogin}
+            size="lg"
+            className="bg-slate-900 hover:bg-slate-800 text-lg px-8 py-6"
+          >
+            Start Your Project <ArrowRight className="ml-2 w-5 h-5" />
+          </Button>
+        </div>
+
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-3 gap-8 mb-24">
+          <Card className="border-0 shadow-lg bg-white/70 backdrop-blur">
+            <CardHeader>
+              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mb-4">
+                <Users className="w-6 h-6 text-slate-900" />
+              </div>
+              <CardTitle>Team Management</CardTitle>
+              <CardDescription>
+                Add team members with their skills. Share a 4-digit code for easy joining.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          <Card className="border-0 shadow-lg bg-white/70 backdrop-blur">
+            <CardHeader>
+              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mb-4">
+                <Sparkles className="w-6 h-6 text-slate-900" />
+              </div>
+              <CardTitle>AI Task Assignment</CardTitle>
+              <CardDescription>
+                AI breaks down your project and assigns tasks based on skills and workload.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          <Card className="border-0 shadow-lg bg-white/70 backdrop-blur">
+            <CardHeader>
+              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mb-4">
+                <BarChart3 className="w-6 h-6 text-slate-900" />
+              </div>
+              <CardTitle>Fairness Tracking</CardTitle>
+              <CardDescription>
+                Track contributions and get AI-powered insights on team fairness.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+
+        {/* How It Works */}
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold text-slate-900 mb-4">How It Works</h2>
+          <p className="text-slate-600">Four simple steps to fair collaboration</p>
+        </div>
+
+        <div className="grid md:grid-cols-4 gap-6">
+          {[
+            { step: '1', title: 'Create Project', desc: 'Add title, description, and deadline' },
+            { step: '2', title: 'Add Team', desc: 'Invite members with their skills' },
+            { step: '3', title: 'AI Assigns Tasks', desc: 'Fair distribution in seconds' },
+            { step: '4', title: 'Track Progress', desc: 'Monitor contributions & fairness' },
+          ].map((item, i) => (
+            <div key={i} className="text-center">
+              <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold text-lg mx-auto mb-4">
+                {item.step}
+              </div>
+              <h3 className="font-semibold text-slate-900 mb-2">{item.title}</h3>
+              <p className="text-sm text-slate-600">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div className="mt-24 text-center bg-slate-900 rounded-3xl p-12">
+          <h2 className="text-3xl font-bold text-white mb-4">Ready to work fairly?</h2>
+          <p className="text-slate-300 mb-8">Join thousands of students and teams using AllocPal</p>
+          <Button 
+            onClick={handleLogin}
+            size="lg"
+            variant="secondary"
+            className="bg-white text-slate-900 hover:bg-slate-100"
+          >
+            Get Started Free <ArrowRight className="ml-2 w-5 h-5" />
+          </Button>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t bg-white/50 py-8 text-center text-slate-600">
+        <p>© 2024 AllocPal. Built for fair collaboration.</p>
+      </footer>
+    </div>
+  );
+}
