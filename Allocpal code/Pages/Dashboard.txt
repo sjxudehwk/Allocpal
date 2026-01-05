@@ -1,0 +1,217 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { Button } from '@/components/ui/button';
+import { Plus, UserPlus, Sparkles, Loader2, FolderOpen, User } from 'lucide-react';
+import { createPageUrl } from '@/utils';
+import NewProjectModal from '@/components/projects/NewProjectModal';
+import JoinProjectModal from '@/components/projects/JoinProjectModal';
+import ProjectCard from '@/components/projects/ProjectCard';
+import ProfileModal from '@/components/profile/ProfileModal';
+
+export default function Dashboard() {
+  const [user, setUser] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [memberCounts, setMemberCounts] = useState({});
+  const [taskStats, setTaskStats] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [showJoinProject, setShowJoinProject] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+
+      // Get all project memberships for this user
+      const memberships = await base44.entities.ProjectMember.filter({ email: currentUser.email });
+      const projectIds = memberships.map(m => m.project_id);
+
+      if (projectIds.length > 0) {
+        // Get all projects
+        const allProjects = await base44.entities.Project.list();
+        const userProjects = allProjects.filter(p => projectIds.includes(p.id));
+        setProjects(userProjects);
+
+        // Get member counts and task stats for each project
+        const counts = {};
+        const stats = {};
+        
+        for (const project of userProjects) {
+          const members = await base44.entities.ProjectMember.filter({ project_id: project.id });
+          counts[project.id] = members.length;
+
+          const tasks = await base44.entities.Task.filter({ project_id: project.id });
+          stats[project.id] = {
+            total: tasks.length,
+            completed: tasks.filter(t => t.status === 'completed').length,
+          };
+        }
+        
+        setMemberCounts(counts);
+        setTaskStats(stats);
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    }
+    setIsLoading(false);
+  };
+
+  const handleProjectCreated = (project) => {
+    setShowNewProject(false);
+    window.location.href = createPageUrl(`Project?id=${project.id}`);
+  };
+
+  const handleProjectJoined = (project) => {
+    setShowJoinProject(false);
+    window.location.href = createPageUrl(`Project?id=${project.id}`);
+  };
+
+  const handleProfileUpdated = (updatedUser) => {
+    setUser(updatedUser);
+    setShowProfile(false);
+  };
+
+  const handleLogout = () => {
+    base44.auth.logout(createPageUrl('Home'));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-slate-600">Loading your projects...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <img 
+              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6951500dd50ea78b48c99ef1/e3406e94f_22f88a24-2593-4b54-8a03-a9094999db1d.jpeg"
+              alt="AllocPal Logo"
+              className="w-9 h-9 rounded-lg object-cover"
+            />
+            <span className="text-xl font-bold text-slate-900">AllocPal</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setShowProfile(true)}
+              className="rounded-full"
+            >
+              <div className="w-8 h-8 bg-slate-900 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                {(user?.full_name || user?.email)?.charAt(0).toUpperCase()}
+              </div>
+            </Button>
+            <Button variant="ghost" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">
+            Welcome back, {user?.full_name || user?.email?.split('@')[0]}!
+          </h1>
+          <p className="text-slate-600">
+            Manage your projects and track team contributions.
+          </p>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-4 mb-8">
+          <Button 
+            onClick={() => setShowNewProject(true)}
+            className="bg-slate-900 hover:bg-slate-800"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            New Project
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => setShowJoinProject(true)}
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Join Project
+          </Button>
+        </div>
+
+        {/* Projects Grid */}
+        {projects.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-slate-200">
+            <FolderOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-slate-700 mb-2">No projects yet</h3>
+            <p className="text-slate-500 mb-6">
+              Create a new project or join an existing one to get started.
+            </p>
+            <div className="flex justify-center gap-4">
+              <Button 
+                onClick={() => setShowNewProject(true)}
+                className="bg-slate-900 hover:bg-slate-800"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Project
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => setShowJoinProject(true)}
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Join with Code
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {projects.map(project => (
+              <ProjectCard 
+                key={project.id} 
+                project={project}
+                memberCount={memberCounts[project.id] || 0}
+                taskStats={taskStats[project.id]}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Modals */}
+      <NewProjectModal
+        open={showNewProject}
+        onClose={() => setShowNewProject(false)}
+        onSuccess={handleProjectCreated}
+        userEmail={user?.email}
+      />
+
+      <JoinProjectModal
+        open={showJoinProject}
+        onClose={() => setShowJoinProject(false)}
+        onSuccess={handleProjectJoined}
+        userEmail={user?.email}
+        userName={user?.full_name}
+      />
+
+      <ProfileModal
+        open={showProfile}
+        onClose={() => setShowProfile(false)}
+        user={user}
+        onSuccess={handleProfileUpdated}
+      />
+    </div>
+  );
+}

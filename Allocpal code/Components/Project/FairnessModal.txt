@@ -1,0 +1,170 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Loader2, AlertCircle, Upload } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+export default function EditProjectModal({ open, onClose, project, onSuccess }) {
+  const [projectData, setProjectData] = useState({
+    title: '',
+    description: '',
+    deadline: '',
+    file_url: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (project) {
+      setProjectData({
+        title: project.title || '',
+        description: project.description || '',
+        deadline: project.deadline || '',
+        file_url: project.file_url || '',
+      });
+    }
+  }, [project]);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingFile(true);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setProjectData(prev => ({ ...prev, file_url }));
+    } catch (err) {
+      setError('Failed to upload file');
+    }
+    setUploadingFile(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!projectData.title.trim()) {
+      setError('Project title is required');
+      return;
+    }
+    if (!projectData.deadline) {
+      setError('Deadline is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      await base44.entities.Project.update(project.id, projectData);
+      onSuccess({ ...project, ...projectData });
+      onClose();
+    } catch (err) {
+      setError('Failed to update project. Please try again.');
+    }
+    setIsSubmitting(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit Project</DialogTitle>
+        </DialogHeader>
+
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="title">Project Title *</Label>
+            <Input
+              id="title"
+              value={projectData.title}
+              onChange={(e) => setProjectData({ ...projectData, title: e.target.value })}
+              placeholder="e.g., Marketing Campaign Q1"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={projectData.description}
+              onChange={(e) => setProjectData({ ...projectData, description: e.target.value })}
+              placeholder="Brief description of the project..."
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="deadline">Deadline *</Label>
+            <Input
+              id="deadline"
+              type="date"
+              value={projectData.deadline}
+              onChange={(e) => setProjectData({ ...projectData, deadline: e.target.value })}
+              min={new Date().toISOString().split('T')[0]}
+            />
+          </div>
+
+          <div>
+            <Label>Attached File</Label>
+            <div className="mt-1">
+              <label className="flex items-center justify-center w-full h-20 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-indigo-400 transition-colors">
+                <div className="text-center">
+                  {uploadingFile ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-slate-400 mx-auto" />
+                  ) : projectData.file_url ? (
+                    <div className="text-sm text-emerald-600">File attached ✓</div>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5 text-slate-400 mx-auto" />
+                      <span className="text-sm text-slate-500">Click to upload</span>
+                    </>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="bg-slate-900 hover:bg-slate-800"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

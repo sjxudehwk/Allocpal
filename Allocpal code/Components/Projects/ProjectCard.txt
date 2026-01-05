@@ -1,0 +1,100 @@
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Calendar, Users, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { format, differenceInDays, isPast } from 'date-fns';
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
+
+export default function ProjectCard({ project, memberCount, taskStats }) {
+  const daysLeft = differenceInDays(new Date(project.deadline), new Date());
+  const isOverdue = isPast(new Date(project.deadline)) && project.status !== 'completed';
+
+  const getDeadlineColor = () => {
+    if (isOverdue) return 'text-red-600 bg-red-50';
+    if (daysLeft <= 3) return 'text-orange-600 bg-orange-50';
+    return 'text-slate-600 bg-slate-50';
+  };
+
+  const completedTasks = taskStats?.completed || 0;
+  const totalTasks = taskStats?.total || 0;
+  const progressPercent = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+  return (
+    <Link to={createPageUrl(`Project?id=${project.id}`)}>
+      <Card className="hover:shadow-lg transition-all duration-300 hover:border-slate-900 cursor-pointer group">
+        <CardHeader className="pb-3">
+          <div className="flex justify-between items-start">
+            <CardTitle className="text-lg group-hover:text-slate-900 transition-colors">
+              {project.title}
+            </CardTitle>
+            <Badge 
+              variant={project.status === 'completed' ? 'default' : 'secondary'}
+              className={project.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : ''}
+            >
+              {project.status === 'completed' ? 'Completed' : 'Active'}
+            </Badge>
+          </div>
+          {project.description && (
+            <p className="text-sm text-slate-500 line-clamp-2 mt-1">
+              {project.description}
+            </p>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Progress Bar */}
+            <div>
+              <div className="flex justify-between text-xs text-slate-600 mb-1">
+                <span>Progress</span>
+                <span>{completedTasks}/{totalTasks} tasks</span>
+              </div>
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-slate-900 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Meta Info */}
+            <div className="flex flex-wrap gap-3 text-sm">
+              <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${getDeadlineColor()}`}>
+                {isOverdue ? (
+                  <AlertCircle className="w-3.5 h-3.5" />
+                ) : (
+                  <Calendar className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {isOverdue 
+                    ? 'Overdue' 
+                    : daysLeft === 0 
+                      ? 'Due today' 
+                      : `${daysLeft} days left`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 text-slate-600 bg-slate-50 px-2 py-1 rounded-full">
+                <Users className="w-3.5 h-3.5" />
+                <span>{memberCount} members</span>
+              </div>
+
+              {!project.tasks_generated && (
+                <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Tasks pending</span>
+                </div>
+              )}
+            </div>
+
+            {/* Join Code */}
+            <div className="pt-2 border-t">
+              <span className="text-xs text-slate-500">Join Code: </span>
+              <span className="font-mono font-semibold text-slate-900">{project.join_code}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}

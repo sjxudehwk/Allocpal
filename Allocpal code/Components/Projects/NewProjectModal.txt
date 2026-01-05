@@ -1,0 +1,528 @@
+import React, { useState } from 'react';
+import { base44 } from '@/api/base44Client';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Trash2, Loader2, Upload, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+export default function NewProjectModal({ open, onClose, onSuccess, userEmail }) {
+  const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  const [projectData, setProjectData] = useState({
+    title: '',
+    description: '',
+    deadline: '',
+    file_url: '',
+  });
+
+  const [ownerSkill, setOwnerSkill] = useState('');
+
+  const [members, setMembers] = useState([
+    { name: '', email: '', skill: '' }
+  ]);
+
+  const [customTasks, setCustomTasks] = useState([
+    { title: '', description: '', priority: 'medium' }
+  ]);
+
+  const generateJoinCode = () => {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingFile(true);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setProjectData(prev => ({ ...prev, file_url }));
+    } catch (err) {
+      setError('Failed to upload file');
+    }
+    setUploadingFile(false);
+  };
+
+  const addMember = () => {
+    setMembers([...members, { name: '', email: '', skill: '' }]);
+  };
+
+  const removeMember = (index) => {
+    if (members.length > 1) {
+      setMembers(members.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateMember = (index, field, value) => {
+    const updated = [...members];
+    updated[index][field] = value;
+    setMembers(updated);
+  };
+
+  const addTask = () => {
+    setCustomTasks([...customTasks, { title: '', description: '', priority: 'medium' }]);
+  };
+
+  const removeTask = (index) => {
+    if (customTasks.length > 1) {
+      setCustomTasks(customTasks.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateTask = (index, field, value) => {
+    const updated = [...customTasks];
+    updated[index][field] = value;
+    setCustomTasks(updated);
+  };
+
+  const validateStep1 = () => {
+    if (!projectData.title.trim()) {
+      setError('Project title is required');
+      return false;
+    }
+    if (!projectData.deadline) {
+      setError('Deadline is required');
+      return false;
+    }
+    setError('');
+    return true;
+  };
+
+  const validateStep2 = () => {
+    for (let i = 0; i < members.length; i++) {
+      if (!members[i].name.trim() || !members[i].email.trim()) {
+        setError(`Please fill in name and email for all team members`);
+        return false;
+      }
+      if (!members[i].email.includes('@')) {
+        setError(`Please enter a valid email for ${members[i].name || 'team member ' + (i + 1)}`);
+        return false;
+      }
+    }
+    setError('');
+    return true;
+  };
+
+  const validateStep3 = () => {
+    for (let i = 0; i < customTasks.length; i++) {
+      if (!customTasks[i].title.trim()) {
+        setError(`Please fill in title for all tasks`);
+        return false;
+      }
+    }
+    setError('');
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateStep3()) return;
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const joinCode = generateJoinCode();
+      
+      // Create project
+      const project = await base44.entities.Project.create({
+        ...projectData,
+        join_code: joinCode,
+        owner_email: userEmail,
+        status: 'active',
+        tasks_generated: true,
+      });
+
+      // Add owner as a member (get the actual user name)
+      const user = await base44.auth.me();
+      await base44.entities.ProjectMember.create({
+        project_id: project.id,
+        name: user.full_name || user.email.split('@')[0],
+        email: userEmail,
+        skill: ownerSkill,
+        is_owner: true,
+      });
+
+      // Add all team members
+      const memberPromises = members.map(member =>
+        base44.entities.ProjectMember.create({
+          project_id: project.id,
+          name: member.name,
+          email: member.email,
+          skill: member.skill,
+          is_owner: false,
+        })
+      );
+      await Promise.all(memberPromises);
+
+      // Use AI to assign custom tasks to team members
+      try {
+        const user = await base44.auth.me();
+        const ownerName = user.full_name || user.email.split('@')[0];
+        const allMembers = [
+          { name: ownerName, email: userEmail, skill: ownerSkill },
+          ...members
+        ];
+
+        const prompt = `You are a project management AI. Assign these custom tasks fairly to team members based on their skills and workload balance.
+
+Project Title: ${projectData.title}
+Deadline: ${projectData.deadline}
+
+Team Members:
+${allMembers.map((m, i) => `${i + 1}. ${m.name} (${m.email})${m.skill ? ` - Skill: ${m.skill}` : ''}`).join('\n')}
+
+Tasks to Assign:
+${customTasks.map((t, i) => `${i + 1}. ${t.title} - Priority: ${t.priority}${t.description ? ` (${t.description})` : ''}`).join('\n')}
+
+Requirements:
+- Assign each task to one team member
+- Consider member skills when assigning
+- Distribute workload fairly across all members
+- Try to give each member at least one task if possible
+
+Return the task assignments as a JSON array.`;
+
+        const response = await base44.integrations.Core.InvokeLLM({
+          prompt,
+          response_json_schema: {
+            type: 'object',
+            properties: {
+              assignments: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    task_title: { type: 'string' },
+                    assigned_email: { type: 'string' },
+                    assigned_name: { type: 'string' }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        if (response.assignments && response.assignments.length > 0) {
+          const taskPromises = customTasks.map((task, index) => {
+            const assignment = response.assignments[index] || response.assignments[0];
+            return base44.entities.Task.create({
+              project_id: project.id,
+              title: task.title,
+              description: task.description || '',
+              assigned_to: assignment.assigned_email,
+              assigned_name: assignment.assigned_name,
+              status: 'not_started',
+              priority: task.priority,
+            });
+          });
+          await Promise.all(taskPromises);
+        }
+      } catch (aiError) {
+        console.error('AI task assignment failed:', aiError);
+        // Create tasks without assignments as fallback
+        const user = await base44.auth.me();
+        const ownerName = user.full_name || user.email.split('@')[0];
+        const fallbackPromises = customTasks.map((task) =>
+          base44.entities.Task.create({
+            project_id: project.id,
+            title: task.title,
+            description: task.description || '',
+            assigned_to: userEmail,
+            assigned_name: ownerName,
+            status: 'not_started',
+            priority: task.priority,
+          })
+        );
+        await Promise.all(fallbackPromises);
+      }
+
+      onSuccess(project);
+      resetForm();
+    } catch (err) {
+      setError('Failed to create project. Please try again.');
+    }
+    setIsSubmitting(false);
+  };
+
+  const resetForm = () => {
+    setStep(1);
+    setProjectData({ title: '', description: '', deadline: '', file_url: '' });
+    setOwnerSkill('');
+    setMembers([{ name: '', email: '', skill: '' }]);
+    setCustomTasks([{ title: '', description: '', priority: 'medium' }]);
+    setError('');
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-xl">
+            {step === 1 ? 'Create New Project' : step === 2 ? 'Add Team Members' : 'Add Custom Tasks'}
+          </DialogTitle>
+        </DialogHeader>
+
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="title">Project Title *</Label>
+              <Input
+                id="title"
+                value={projectData.title}
+                onChange={(e) => setProjectData({ ...projectData, title: e.target.value })}
+                placeholder="e.g., Marketing Campaign Q1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="description">Description (optional)</Label>
+              <Textarea
+                id="description"
+                value={projectData.description}
+                onChange={(e) => setProjectData({ ...projectData, description: e.target.value })}
+                placeholder="Brief description of the project..."
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="deadline">Deadline *</Label>
+              <Input
+                id="deadline"
+                type="date"
+                value={projectData.deadline}
+                onChange={(e) => setProjectData({ ...projectData, deadline: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+
+            <div>
+              <Label>Attach File (optional)</Label>
+              <div className="mt-1">
+                <label className="flex items-center justify-center w-full h-20 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-indigo-400 transition-colors">
+                  <div className="text-center">
+                    {uploadingFile ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-slate-400 mx-auto" />
+                    ) : projectData.file_url ? (
+                      <div className="text-sm text-emerald-600">File uploaded ✓</div>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5 text-slate-400 mx-auto" />
+                        <span className="text-sm text-slate-500">Click to upload</span>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="ownerSkill">Your Skill (optional)</Label>
+              <Input
+                id="ownerSkill"
+                value={ownerSkill}
+                onChange={(e) => setOwnerSkill(e.target.value)}
+                placeholder="e.g., Project Management, Design, Coding"
+              />
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button onClick={() => validateStep1() && setStep(2)}>
+                Next: Add Team
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Add your team members. They will get tasks assigned by AI in the next step.
+            </p>
+
+            <div className="space-y-4 max-h-60 overflow-y-auto">
+              {members.map((member, index) => (
+                <div key={index} className="p-4 bg-slate-50 rounded-lg space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-slate-700">
+                      Member {index + 1}
+                    </span>
+                    {members.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeMember(index)}
+                        className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Name *</Label>
+                      <Input
+                        value={member.name}
+                        onChange={(e) => updateMember(index, 'name', e.target.value)}
+                        placeholder="John Doe"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Gmail *</Label>
+                      <Input
+                        type="email"
+                        value={member.email}
+                        onChange={(e) => updateMember(index, 'email', e.target.value)}
+                        placeholder="john@gmail.com"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Skill (optional)</Label>
+                    <Input
+                      value={member.skill}
+                      onChange={(e) => updateMember(index, 'skill', e.target.value)}
+                      placeholder="e.g., Design, Coding, Research"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={addMember}
+              className="w-full"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Another Member
+            </Button>
+
+            <div className="flex justify-between pt-4">
+              <Button variant="outline" onClick={() => setStep(1)}>
+                Back
+              </Button>
+              <Button onClick={() => validateStep2() && setStep(3)}>
+                Next: Add Tasks
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Add custom tasks for your project. AI will automatically assign them to your team members.
+            </p>
+
+            <div className="space-y-4 max-h-60 overflow-y-auto">
+              {customTasks.map((task, index) => (
+                <div key={index} className="p-4 bg-slate-50 rounded-lg space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-slate-700">
+                      Task {index + 1}
+                    </span>
+                    {customTasks.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeTask(index)}
+                        className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs">Task Title *</Label>
+                    <Input
+                      value={task.title}
+                      onChange={(e) => updateTask(index, 'title', e.target.value)}
+                      placeholder="e.g., Design landing page"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Description (optional)</Label>
+                    <Textarea
+                      value={task.description}
+                      onChange={(e) => updateTask(index, 'description', e.target.value)}
+                      placeholder="Task details..."
+                      rows={2}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Priority</Label>
+                    <select
+                      value={task.priority}
+                      onChange={(e) => updateTask(index, 'priority', e.target.value)}
+                      className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={addTask}
+              className="w-full"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Another Task
+            </Button>
+
+            <div className="flex justify-between pt-4">
+              <Button variant="outline" onClick={() => setStep(2)}>
+                Back
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="bg-slate-900 hover:bg-slate-800"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating & Assigning Tasks...
+                  </>
+                ) : (
+                  'Create Project'
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
