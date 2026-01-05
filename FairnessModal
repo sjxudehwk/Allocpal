@@ -1,0 +1,88 @@
+import React, { useState } from 'react';
+import { base44 } from '@/api/base44Client';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Sparkles, Loader2, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
+
+export default function FairnessModal({ open, onClose, project, members, tasks }) {
+  const [insights, setInsights] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const calculateStats = () => {
+    return members.map(member => {
+      const memberTasks = tasks.filter(t => t.assigned_to === member.email);
+      const completed = memberTasks.filter(t => t.status === 'completed').length;
+      const total = memberTasks.length;
+      const percentage = total > 0 ? (completed / total) * 100 : 0;
+      
+      return {
+        name: member.name,
+        email: member.email,
+        completed,
+        total,
+        percentage,
+      };
+    });
+  };
+
+  const generateInsights = async () => {
+    setIsGenerating(true);
+    try {
+      const stats = calculateStats();
+      const prompt = `You are a fair project management AI. Analyze this team project and provide insights on fairness and workload distribution.
+
+IMPORTANT: Base your fairness analysis on the DIFFICULTY and NUMBER of tasks assigned to each member, NOT on task priority. Consider task complexity, description length, and total workload.
+
+Project: ${project.title}
+
+Team Statistics:
+${stats.map(s => `- ${s.name}: ${s.completed}/${s.total} tasks completed (${s.percentage.toFixed(0)}%)`).join('\n')}
+
+All Tasks (with descriptions to assess difficulty):
+${tasks.map(t => `- ${t.title} (assigned to ${t.assigned_name}, status: ${t.status})${t.description ? ` - Description: ${t.description}` : ''}`).join('\n')}
+
+Provide:
+1. Overall fairness score (0-100) based on task difficulty and number
+2. Brief summary of workload distribution considering task complexity
+3. Specific feedback for each member about their workload difficulty
+4. Any concerns about balance or contributions
+5. Recommendations for improvement`;
+
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt,
+        response_json_schema: {
+          type: 'object',
+          properties: {
+            fairness_score: { type: 'number' },
+            summary: { type: 'string' },
+            member_feedback: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  feedback: { type: 'string' }
+                }
+              }
+            },
+            concerns: { type: 'string' },
+            recommendations: { type: 'string' }
+          }
+        }
+      });
+
+      setInsights(response);
+    } catch (error) {
+      console.error('Failed to generate insights:', error);
+    }
+    setIsGenerating(false);
+  };
+
+  const stats = calculateStats();
