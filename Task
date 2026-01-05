@@ -1,0 +1,58 @@
+{
+  "name": "Task",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "description": "Reference to project"
+    },
+    "title": {
+      "type": "string",
+      "description": "Task title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Task description"
+    },
+    "assigned_to": {
+      "type": "string",
+      "description": "Member email assigned to this task"
+    },
+    "assigned_name": {
+      "type": "string",
+      "description": "Member name assigned to this task"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "not_started",
+        "in_progress",
+        "completed"
+      ],
+      "default": "not_started"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default": "medium"
+    },
+    "proof_of_work_url": {
+      "type": "string",
+      "description": "URL of uploaded proof of work file"
+    },
+    "proof_note": {
+      "type": "string",
+      "description": "Optional note with the proof of work"
+    }
+  },
+  "required": [
+    "project_id",
+    "title",
+    "assigned_to",
+    "assigned_name"
+  ]
+}
