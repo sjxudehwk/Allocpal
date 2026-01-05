@@ -1,0 +1,184 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Card, CardContent } from '@/components/ui/card';
+import { CheckCircle, Sparkles, Loader2, Trophy, Star } from 'lucide-react';
+
+export default function CompletionSummaryModal({ open, onClose, project, members, tasks }) {
+  const [summary, setSummary] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    if (open && !summary) {
+      generateSummary();
+    }
+  }, [open]);
+
+  const generateSummary = async () => {
+    setIsGenerating(true);
+    try {
+      const stats = members.map(member => {
+        const memberTasks = tasks.filter(t => t.assigned_to === member.email);
+        return {
+          name: member.name,
+          email: member.email,
+          completed: memberTasks.filter(t => t.status === 'completed').length,
+          total: memberTasks.length,
+        };
+      });
+
+      const prompt = `You are a project management AI. This project has just been completed! Generate a comprehensive final summary.
+
+IMPORTANT: Consider task difficulty and complexity when evaluating contributions, not just the number of tasks.
+
+Project: ${project.title}
+Description: ${project.description || 'No description'}
+Team Size: ${members.length} members
+Total Tasks: ${tasks.length}
+
+Team Contributions:
+${stats.map(s => `- ${s.name}: ${s.completed}/${s.total} tasks completed`).join('\n')}
+
+All Tasks (to assess difficulty):
+${tasks.map(t => `- ${t.title} (assigned to ${t.assigned_name})${t.description ? ` - ${t.description}` : ''}`).join('\n')}
+
+Provide:
+1. A congratulatory message
+2. Brief project overview
+3. Key achievements
+4. Individual highlights for each member considering task difficulty (what they did well)
+5. Overall team performance rating (Excellent/Good/Fair)
+6. A motivational closing message`;
+
+      const response = await base44.integrations.Core.InvokeLLM({
+        prompt,
+        response_json_schema: {
+          type: 'object',
+          properties: {
+            congratulations: { type: 'string' },
+            overview: { type: 'string' },
+            achievements: { type: 'array', items: { type: 'string' } },
+            member_highlights: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  highlight: { type: 'string' }
+                }
+              }
+            },
+            team_rating: { type: 'string' },
+            closing: { type: 'string' }
+          }
+        }
+      });
+
+      setSummary(response);
+      
+      // Mark project as completed
+      await base44.entities.Project.update(project.id, { status: 'completed' });
+    } catch (error) {
+      console.error('Failed to generate summary:', error);
+    }
+    setIsGenerating(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <Trophy className="w-6 h-6 text-yellow-500" />
+            Project Completed!
+          </DialogTitle>
+        </DialogHeader>
+
+        {isGenerating ? (
+          <Card className="border-slate-200">
+            <CardContent className="py-12 text-center">
+              <Loader2 className="w-12 h-12 animate-spin text-slate-400 mx-auto mb-4" />
+              <p className="text-slate-600">Generating your completion summary...</p>
+            </CardContent>
+          </Card>
+        ) : summary ? (
+          <div className="space-y-6">
+            {/* Congratulations */}
+            <Card className="border-emerald-200 bg-emerald-50">
+              <CardContent className="pt-6 text-center">
+                <CheckCircle className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
+                <p className="text-lg font-medium text-emerald-900">{summary.congratulations}</p>
+              </CardContent>
+            </Card>
+
+            {/* Overview */}
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="font-semibold text-slate-900 mb-2">Project Overview</h3>
+                <p className="text-sm text-slate-700">{summary.overview}</p>
+              </CardContent>
+            </Card>
+
+            {/* Achievements */}
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-500" />
+                  Key Achievements
+                </h3>
+                <ul className="space-y-2">
+                  {summary.achievements?.map((achievement, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                      <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                      {achievement}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+
+            {/* Team Rating */}
+            <Card className="border-slate-900 bg-slate-50">
+              <CardContent className="pt-6 text-center">
+                <div className="text-3xl font-bold text-slate-900 mb-2">
+                  {summary.team_rating}
+                </div>
+                <p className="text-slate-600">Team Performance</p>
+              </CardContent>
+            </Card>
+
+            {/* Member Highlights */}
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  Individual Highlights
+                </h3>
+                <div className="space-y-3">
+                  {summary.member_highlights?.map((highlight, i) => (
+                    <div key={i} className="p-3 bg-slate-50 rounded-lg">
+                      <p className="font-medium text-slate-900 text-sm mb-1">{highlight.name}</p>
+                      <p className="text-sm text-slate-600">{highlight.highlight}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Closing */}
+            <Card className="border-indigo-200 bg-indigo-50">
+              <CardContent className="pt-6 text-center">
+                <p className="text-sm text-indigo-900 italic">{summary.closing}</p>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
